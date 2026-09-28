@@ -1,0 +1,7 @@
+venv/
+test_venv/
+miniconda.sh
+dataset.cache
+weights_imx_model/*
+!weights_imx_model/packerOut.zip
+__pycache__/

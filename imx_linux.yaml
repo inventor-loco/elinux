@@ -1,0 +1,6 @@
+path: /home/inventor-loco/Desktop/REPOS/elinux/dataset
+train: .
+val: .
+
+names:
+  0: ROI
