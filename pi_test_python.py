@@ -21,29 +21,42 @@ for i in range(50):
         # Request a frame and its associated metadata
         request = picam2.capture_request()
         frame = request.make_array("main")
-        metadata = request.metadata
+        metadata = request.get_metadata()
         
         # Check if the IMX500 generated object detection metadata
         if "ObjectDetect" in metadata:
             detections = metadata["ObjectDetect"]
             
             for det in detections:
-                # The bounding box is usually normalized [x, y, width, height]
                 box = det.get("box", [0, 0, 0, 0])
                 conf = det.get("confidence", 0)
                 
                 h, w, _ = frame.shape
-                x1 = int(box[0] * w)
-                y1 = int(box[1] * h)
-                x2 = int((box[0] + box[2]) * w)
-                y2 = int((box[1] + box[3]) * h)
+                x1, y1 = int(box[0] * w), int(box[1] * h)
+                x2, y2 = int((box[0] + box[2]) * w), int((box[1] + box[3]) * h)
                 
-                # Draw the bounding box
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 4)
-                cv2.putText(frame, f"ROI: {conf:.2f}", (x1, y1 - 10), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                
+                cv2.putText(frame, f"ROI: {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 print(f"Found ROI! Conf: {conf:.2f} at {x1},{y1} -> {x2},{y2}")
+                
+        elif "Imx500NeuralNetwork" in metadata:
+            # Fallback for raw tensor parsing using IMX500 helper
+            outputs = imx500.get_outputs(metadata)
+            if outputs is not None and len(outputs) > 0:
+                for det in outputs[0]:
+                    # Format typically: [class_idx, score, xmin, ymin, xmax, ymax]
+                    if len(det) >= 6:
+                        conf = det[1]
+                        if conf < 0.1:  # Filter low confidence
+                            continue
+                        
+                        h, w, _ = frame.shape
+                        x1, y1 = int(det[2] * w), int(det[3] * h)
+                        x2, y2 = int(det[4] * w), int(det[5] * h)
+                        
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 4)
+                        cv2.putText(frame, f"ROI: {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                        print(f"Found ROI (Tensor)! Conf: {conf:.2f} at {x1},{y1} -> {x2},{y2}")
 
         # Save the 10th frame as a test image
         if i == 10:
@@ -53,6 +66,8 @@ for i in range(50):
             
     except Exception as e:
         print(f"Error processing frame: {e}")
+        import traceback
+        traceback.print_exc()
 
 picam2.stop()
 print("Test completed.")
