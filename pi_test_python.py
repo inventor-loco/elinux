@@ -23,6 +23,10 @@ for i in range(50):
         frame = request.make_array("main")
         metadata = request.get_metadata()
         
+        # Debugging prints
+        print(f"--- Frame {i} ---")
+        print(f"Available metadata keys: {list(metadata.keys())}")
+        
         # Check if the IMX500 generated object detection metadata
         if "ObjectDetect" in metadata:
             detections = metadata["ObjectDetect"]
