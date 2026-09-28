@@ -66,7 +66,8 @@ for i in range(50):
         if i == 10:
             cv2.imwrite("python_test_detection.jpg", frame)
             print("Saved python_test_detection.jpg with bounding boxes!")
-            break
+            
+        request.release()
             
     except Exception as e:
         print(f"Error processing frame: {e}")
