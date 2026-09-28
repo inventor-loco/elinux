@@ -1,23 +1,19 @@
 #!/usr/bin/env python3
 import cv2
 from picamera2 import Picamera2
+from picamera2.devices.imx500 import IMX500
 
-print("Initializing Picamera2...")
-picam2 = Picamera2()
+print("Initializing IMX500 and Picamera2...")
+# 1. Initialize IMX500 with the RPK file
+imx500 = IMX500("weights_imx_model/network.rpk")
 
-# Configure the camera with the IMX500 network
+# 2. Initialize Picamera2 using the specific camera number for the IMX500
+picam2 = Picamera2(imx500.camera_num)
+
+# 3. Configure and start the camera
 config = picam2.create_preview_configuration(main={"size": (1920, 1080)})
-picam2.configure(config)
+picam2.start(config)
 
-print("Loading network.rpk into IMX500...")
-# Enable the IMX500 object detection post-processing stage
-picam2.start_imx500_object_detection(
-    network_file="weights_imx_model/network.rpk",
-    max_detections=300,
-    threshold=0.0
-)
-
-picam2.start()
 print("Camera started. Capturing frames...")
 
 for i in range(50):
@@ -28,10 +24,8 @@ for i in range(50):
         metadata = request.metadata
         
         # Check if the IMX500 generated object detection metadata
-        if "Imx500NeuralNetwork" in metadata or "ObjectDetect" in metadata:
-            detections = metadata.get("ObjectDetect", [])
-            if not detections:
-                detections = metadata.get("Imx500NeuralNetwork", [])
+        if "ObjectDetect" in metadata:
+            detections = metadata["ObjectDetect"]
             
             for det in detections:
                 # The bounding box is usually normalized [x, y, width, height]
