@@ -29,15 +29,20 @@ NETWORK_RPK_PATH="$(pwd)/weights_imx_model/network.rpk"
 
 cat <<EOF > test_config.json
 {
-    "imx500_object_detection": {
-        "max_detections": 300,
-        "threshold": 0.0,
-        "network_file": "${NETWORK_RPK_PATH}",
-        "classes": ["ROI"]
-    },
-    "object_detect_draw_cv": {
-        "line_thickness": 6
-    }
+    "version": 2.0,
+    "pipeline": [
+        {
+            "type": "imx500_object_detection",
+            "max_detections": 300,
+            "threshold": 0.0,
+            "network_file": "${NETWORK_RPK_PATH}",
+            "classes": ["ROI"]
+        },
+        {
+            "type": "object_detect_draw_cv",
+            "line_thickness": 6
+        }
+    ]
 }
 EOF
 echo "Created test_config.json pointing to ${NETWORK_RPK_PATH}"
@@ -47,4 +52,4 @@ echo "[3/3] Running camera test with rpicam-hello..."
 echo "Press Ctrl+C to stop the test."
 echo ""
 
-rpicam-hello -t 0 --post-process-file test_config.json --shutter 50 -v 2
+rpicam-hello -t 0 --post-process-file test_config.json --shutter 50 -v 2 --viewfinder-width 1920 --viewfinder-height 1080
