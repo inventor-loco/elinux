@@ -14,6 +14,13 @@ picam2 = Picamera2(imx500.camera_num)
 config = picam2.create_preview_configuration(main={"size": (1920, 1080)})
 picam2.start(config)
 
+# 4. Force ultra-short exposure time (50 microseconds)
+picam2.set_controls({
+    "AeEnable": False, 
+    "ExposureTime": 50,
+    "AnalogueGain": 4.0
+})
+
 print("Camera started. Capturing frames...")
 
 for i in range(50):
