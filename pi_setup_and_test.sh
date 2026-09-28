@@ -47,4 +47,4 @@ echo "[3/3] Running camera test with rpicam-hello..."
 echo "Press Ctrl+C to stop the test."
 echo ""
 
-rpicam-hello -t 0 --post-process-file test_config.json --shutter 50
+rpicam-hello -t 0 --post-process-file test_config.json --shutter 50 -v 2
