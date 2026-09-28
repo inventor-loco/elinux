@@ -35,6 +35,8 @@ for i in range(50):
         print(f"Available metadata keys: {list(metadata.keys())}")
         
         # Check if the IMX500 generated object detection metadata
+        found_detection = False
+        
         if "ObjectDetect" in metadata:
             detections = metadata["ObjectDetect"]
             
@@ -49,6 +51,7 @@ for i in range(50):
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 4)
                 cv2.putText(frame, f"ROI: {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 print(f"Found ROI! Conf: {conf:.2f} at {x1},{y1} -> {x2},{y2}")
+                found_detection = True
                 
         elif "Imx500NeuralNetwork" in metadata:
             # Fallback for raw tensor parsing using IMX500 helper
@@ -68,6 +71,14 @@ for i in range(50):
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 4)
                         cv2.putText(frame, f"ROI: {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                         print(f"Found ROI (Tensor)! Conf: {conf:.2f} at {x1},{y1} -> {x2},{y2}")
+                        found_detection = True
+
+        if not found_detection:
+            # Draw a default bounding box in the center if nothing is detected
+            h, w, _ = frame.shape
+            cv2.rectangle(frame, (w//4, h//4), (w*3//4, h*3//4), (255, 0, 0), 4)
+            cv2.putText(frame, "DEFAULT (NO DETECTIONS)", (w//4, h//4 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+            print("No detections found! Drawing default bounding box.")
 
         # Save the 10th frame as a test image
         if i == 10:
