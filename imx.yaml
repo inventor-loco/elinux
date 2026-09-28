@@ -1,0 +1,6 @@
+path: C:/Users/eleni/Desktop
+train: dataset
+val: dataset
+
+names:
+  0: ROI
