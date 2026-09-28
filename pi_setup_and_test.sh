@@ -29,20 +29,15 @@ NETWORK_RPK_PATH="$(pwd)/weights_imx_model/network.rpk"
 
 cat <<EOF > test_config.json
 {
-    "version": 2.0,
-    "pipeline": [
-        {
-            "type": "imx500_object_detection",
-            "max_detections": 300,
-            "threshold": 0.0,
-            "network_file": "${NETWORK_RPK_PATH}",
-            "classes": ["ROI"]
-        },
-        {
-            "type": "object_detect_draw_cv",
-            "line_thickness": 6
-        }
-    ]
+    "imx500_object_detection": {
+        "max_detections": 300,
+        "threshold": 0.0,
+        "network_file": "${NETWORK_RPK_PATH}",
+        "classes": ["ROI"]
+    },
+    "object_detect_draw_cv": {
+        "line_thickness": 6
+    }
 }
 EOF
 echo "Created test_config.json pointing to ${NETWORK_RPK_PATH}"
