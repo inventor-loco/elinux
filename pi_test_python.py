@@ -21,19 +21,20 @@ picam2.set_controls({
     "AnalogueGain": 4.0
 })
 
-print("Camera started. Capturing frames...")
+print("Camera started. Live preview active. Press 'q' to exit.")
 
-for i in range(50):
+# Make a named window that can be resized if needed
+cv2.namedWindow("IMX500 Live Detection", cv2.WINDOW_NORMAL)
+
+frame_count = 0
+while True:
     try:
         # Request a frame and its associated metadata
         request = picam2.capture_request()
         frame = request.make_array("main")
         metadata = request.get_metadata()
         
-        # Debugging prints
-        print(f"--- Frame {i} ---")
-        print(f"Available metadata keys: {list(metadata.keys())}")
-        
+        # We'll skip printing metadata keys every frame to avoid terminal spam
         # Check if the IMX500 generated object detection metadata
         found_detection = False
         
@@ -50,15 +51,12 @@ for i in range(50):
                 
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 4)
                 cv2.putText(frame, f"ROI: {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                print(f"Found ROI! Conf: {conf:.2f} at {x1},{y1} -> {x2},{y2}")
                 found_detection = True
                 
         elif "Imx500NeuralNetwork" in metadata:
-            # Fallback for raw tensor parsing using IMX500 helper
             outputs = imx500.get_outputs(metadata)
             if outputs is not None and len(outputs) > 0:
                 for det in outputs[0]:
-                    # Format typically: [class_idx, score, xmin, ymin, xmax, ymax]
                     if len(det) >= 6:
                         conf = det[1]
                         if conf < 0.1:  # Filter low confidence
@@ -70,7 +68,6 @@ for i in range(50):
                         
                         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 4)
                         cv2.putText(frame, f"ROI: {conf:.2f}", (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                        print(f"Found ROI (Tensor)! Conf: {conf:.2f} at {x1},{y1} -> {x2},{y2}")
                         found_detection = True
 
         if not found_detection:
@@ -78,19 +75,26 @@ for i in range(50):
             h, w, _ = frame.shape
             cv2.rectangle(frame, (w//4, h//4), (w*3//4, h*3//4), (255, 0, 0), 4)
             cv2.putText(frame, "DEFAULT (NO DETECTIONS)", (w//4, h//4 - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-            print("No detections found! Drawing default bounding box.")
 
-        # Save the 10th frame as a test image
-        if i == 10:
-            cv2.imwrite("python_test_detection.jpg", frame)
-            print("Saved python_test_detection.jpg with bounding boxes!")
-            
+        # Optional: scale down the display window so it fits on a Raspberry Pi screen
+        display_frame = cv2.resize(frame, (960, 540))
+        cv2.imshow("IMX500 Live Detection", display_frame)
+        
         request.release()
+        frame_count += 1
+        
+        # Listen for keyboard input; exit if 'q' or ESC is pressed
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q') or key == 27:
+            print("Exit requested by user.")
+            break
             
     except Exception as e:
         print(f"Error processing frame: {e}")
         import traceback
         traceback.print_exc()
+        break
 
+cv2.destroyAllWindows()
 picam2.stop()
-print("Test completed.")
+print(f"Test completed. Processed {frame_count} frames.")
