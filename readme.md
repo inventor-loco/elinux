@@ -26,7 +26,7 @@ The intended deployment path is:
 2. On a supported Linux machine, export and calibrate/quantize the model using the pinned IMX500 toolchain.
 3. Package the converted model for the Raspberry Pi AI Camera and validate ROI detections on the camera.
 
-The repository does not yet contain the conversion scripts. The earlier 10-image conversion loaded on the camera but produced no ROI detections; the subsequent Linux re-conversion using the 700-image calibration set produced a working RPK that does detect ROIs on the IMX500. See `TODO.md` §34 for the current native-demo instructions and troubleshooting; §22 refers to the earlier, superseded conversion.
+The repository does not yet contain the conversion scripts. The Linux re-conversion using the 700-image calibration set produced an RPK that **does** produce ROI detections on the IMX500 (verbose logs show `Number of objects detected: N` with confidences up to ~0.82). However, the current RPK was exported **without the postprocessing / box-decode head**, so decoded box coordinates are wrong and the bounding boxes clip to zero area in the drawer — see `TODO.md` §35. A re-export with `format=imx` (which bundles the PP head) is required before the native demo will render boxes on the preview.
 
 ## Running the demo on the Raspberry Pi
 

@@ -1379,3 +1379,70 @@ From the repo root on the Pi:
 - **Boxes but no `ROI` label**: drop the `"classes"` array; the drawer will label by index.
 - **Config loads but zero detections**: temporarily set `"threshold": 0.0` to confirm the postprocessor is receiving output tensors. If still empty, the RPK on the Pi is stale — repackage from the latest `packerOut.zip`.
 - **`Invalid number of tensors` / `expected 4`**: model output layout mismatch — the export produced tensors incompatible with the `imx500_object_detection` stage. Re-export.
+
+---
+
+# 35. Re-Export Required: Missing Box-Decode / Postprocessing Head
+
+## Symptom
+
+On the Pi with `pi_setup_and_test.sh` (the working native pipeline), the model *does* produce detections — verbose logs show `Number of objects detected: 4`, `ROI[0] (0.82) @ ...`. But **no bounding boxes appear on the preview**, because the decoded boxes have zero width and height after the postprocessor's clip-to-image-bounds step:
+
+```
+(sensor) (802890, 258315)/121650x36468 -> (bound) (803904, 255276)/0x0
+```
+
+The `/0x0` at the end is width × height = 0 × 0. The drawer is drawing invisible rectangles.
+
+## Cause
+
+The Raspberry Pi's reference IMX500 models are named `..._pp.rpk` — e.g. `/usr/share/imx500-models/imx500_network_ssd_mobilenetv2_fpnlite_320x320_pp.rpk`. The `_pp` suffix means the postprocessing head (box decoding, NMS) is baked into the RPK itself.
+
+Our current model is `weights_imx_model/network.rpk` with no `_pp` — the export was done without the postprocessing head. The `imx500_object_detection` rpicam-apps stage then receives raw YOLO output tensors and mis-decodes the box coordinates, producing degenerate boxes that get clipped to zero area.
+
+Rpicam-apps parameter tweaks alone will not fix this. The shipped SSD reference config (`/usr/share/rpi-camera-assets/imx500_mobilenet_ssd.json`) confirms the valid stage parameters are: `max_detections`, `threshold`, `network_file`, `save_input_tensor` (debug), `temporal_filter`, `classes`. There is no `bbox_normalization`, no `bbox_order`, no box-format switch — the RPK's baked-in PP head is the only way box decoding happens.
+
+## Action
+
+Re-export `weights.pt` with the postprocessing head included. Ultralytics' IMX export path bundles it automatically:
+
+```bash
+yolo export model=weights.pt format=imx int8=True data=imx.yaml
+```
+
+This must run on Linux with the pinned toolchain from `imx500_requirements.txt` (see §25). It should produce an ONNX with a `_pp`-equivalent structure that, once run through `imx500-converter` and `imx500-package`, gives an RPK with the box-decode baked in.
+
+## Verification steps after re-export
+
+1. Rename or symlink the new RPK to include `_pp` if it doesn't already (naming is convention only, not required by rpicam-apps).
+2. Drop the new `packerOut.zip` into `weights_imx_model/` and repackage on the Pi:
+   ```bash
+   imx500-package -i weights_imx_model/packerOut.zip -o weights_imx_model
+   ```
+3. Run `./pi_setup_and_test.sh` or `./pi_run_demo.sh` and confirm bounding boxes are drawn on the preview.
+4. Verbose log should now show `(bound) ... /WxH` with non-zero W and H.
+
+## Optional: verify input normalization after re-export
+
+The reference SSD config includes a debug block that dumps raw input tensors to disk:
+
+```json
+"save_input_tensor": {
+    "filename": "output/input_tensor.raw",
+    "num_tensors": 10,
+    "norm_val": [384, 384, 384, 0],
+    "norm_shift": [0, 0, 0, 0]
+}
+```
+
+If detections are still wrong after re-export (e.g. boxes appear but consistently offset), add this block to the `imx500_object_detection` stage, adjust `norm_val` / `norm_shift` to match the YOLO input preprocessing (0-1 float → `norm_val: [255, 255, 255, 0]`, `norm_shift: [0, 0, 0, 0]`), and compare the dumped tensors to what the model was trained on. See TODO §21 for prior notes on IMX500 input normalization.
+
+## Sanity check with a known-good model
+
+To rule out any camera / rpicam-apps issue before re-exporting, point `network_file` at the shipped SSD RPK and run:
+
+```bash
+rpicam-hello -t 0 --post-process-file /usr/share/rpi-camera-assets/imx500_mobilenet_ssd.json
+```
+
+If that draws boxes on people/cars/etc, the drawer + postprocessor chain is healthy and the issue is definitively our custom RPK.
