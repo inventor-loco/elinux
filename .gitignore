@@ -5,3 +5,8 @@ dataset.cache
 weights_imx_model/*
 !weights_imx_model/packerOut.zip
 __pycache__/
+
+# Runtime capture / detection outputs (generated on the Pi)
+output/*
+!output/.gitkeep
+
