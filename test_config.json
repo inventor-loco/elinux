@@ -1,7 +1,7 @@
 {
     "imx500_object_detection": {
         "max_detections": 5,
-        "threshold": 0.3,
+        "threshold": 0.0,
         "network_file": "weights_imx_model/network.rpk",
         "temporal_filter": {
             "tolerance": 0.1,
