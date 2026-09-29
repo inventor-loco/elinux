@@ -19,9 +19,11 @@ cat > "${CONFIG}" <<EOF
 {
     "imx500_object_detection": {
         "max_detections": 300,
-        "threshold": 0.0,
+        "threshold": 0.3,
         "network_file": "${NETWORK_RPK_PATH}",
-        "classes": ["ROI"]
+        "classes": ["ROI"],
+        "bbox_normalization": true,
+        "bbox_order": "xy"
     },
     "object_detect_draw_cv": {
         "line_thickness": 6
@@ -38,6 +40,8 @@ rpicam-hello \
     --metadata-format json \
   | python3 -c '
 import sys, json
+seen_keys = set()
+DET_KEYS = ("ObjectDetect", "Imx500ObjectDetect", "Detections", "objects")
 for line in sys.stdin:
     line = line.strip()
     if not line.startswith("{"):
@@ -46,9 +50,20 @@ for line in sys.stdin:
         d = json.loads(line)
     except Exception:
         continue
-    dets = d.get("ObjectDetect") or []
-    for det in dets:
-        box = det.get("box", [0,0,0,0])
-        conf = det.get("confidence", 0.0)
-        print(f"detected  conf={conf:.2f}  box=[{box[0]:.3f}, {box[1]:.3f}, {box[2]:.3f}, {box[3]:.3f}]", flush=True)
+    # Log any new top-level keys we have not seen (helps identify the detection key).
+    new = [k for k in d.keys() if k not in seen_keys]
+    for k in new:
+        seen_keys.add(k)
+        print(f"[meta-key] {k}", flush=True)
+    for key in DET_KEYS:
+        dets = d.get(key)
+        if not dets:
+            continue
+        for det in dets:
+            if isinstance(det, dict):
+                box = det.get("box") or det.get("bbox") or [0,0,0,0]
+                conf = det.get("confidence", det.get("score", 0.0))
+                print(f"detected[{key}]  conf={conf:.2f}  box={box}", flush=True)
+            else:
+                print(f"detected[{key}]  raw={det}", flush=True)
 '
