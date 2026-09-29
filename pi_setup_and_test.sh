@@ -31,9 +31,11 @@ cat <<EOF > test_config.json
 {
     "imx500_object_detection": {
         "max_detections": 300,
-        "threshold": 0.0,
+        "threshold": 0.3,
         "network_file": "${NETWORK_RPK_PATH}",
-        "classes": ["ROI"]
+        "classes": ["ROI"],
+        "bbox_normalization": true,
+        "bbox_order": "xy"
     },
     "object_detect_draw_cv": {
         "line_thickness": 6
