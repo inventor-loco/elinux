@@ -1322,3 +1322,60 @@ ls /usr/bin/python3*
 Then determine the best Python environment for the exact IMX500 conversion versions above.
 
 Only after that should package installation begin.
+---
+
+# 34. Native rpicam Demo with Bounding Boxes (RESOLVED)
+
+Section 22's "no detections" blocker applied to the earlier 10-image calibration. After the Linux re-conversion with the 700-image calibration set, the current RPK produces valid detections on the IMX500.
+
+Bounding boxes can be drawn directly on the native `rpicam-hello` preview — no Python overlay needed. The `pi_test_python.py` and `pi_live_hybrid.py` scripts are standby fallbacks only.
+
+## Required pieces
+
+1. `weights_imx_model/network.rpk` — the packaged model, produced on the Pi by:
+
+   ```bash
+   imx500-package -i weights_imx_model/packerOut.zip -o weights_imx_model
+   ```
+
+2. `test_config.json` — rpicam-apps post-process pipeline that runs the IMX500 detector and overlays boxes. Committed at repo root.
+
+   ```json
+   {
+       "imx500_object_detection": {
+           "max_detections": 5,
+           "threshold": 0.3,
+           "network_file": "weights_imx_model/network.rpk",
+           "temporal_filter": {
+               "tolerance": 0.1, "factor": 0.2,
+               "visible_frames": 4, "hidden_frames": 2
+           },
+           "classes": ["ROI"]
+       },
+       "object_detect_draw_cv": { "line_thickness": 2 }
+   }
+   ```
+
+3. `pi_run_demo.sh` — wrapper that `cd`s into the repo and runs:
+
+   ```bash
+   rpicam-hello -t 0 --post-process-file test_config.json \
+       --shutter 50 --width 1920 --height 1080 --framerate 15
+   ```
+
+   `--shutter 50` is required: this is a rolling-shutter LED-communication system, and short exposure preserves per-line diversity within a frame. Do not raise it.
+
+## Run
+
+From the repo root on the Pi:
+
+```bash
+./pi_run_demo.sh
+```
+
+## If it doesn't draw boxes
+
+- **`network_file` path not found**: some rpicam-apps builds require an absolute path. Replace `weights_imx_model/network.rpk` in `test_config.json` with the absolute path on the Pi (e.g. `/home/<user>/elinux/weights_imx_model/network.rpk`).
+- **Boxes but no `ROI` label**: drop the `"classes"` array; the drawer will label by index.
+- **Config loads but zero detections**: temporarily set `"threshold": 0.0` to confirm the postprocessor is receiving output tensors. If still empty, the RPK on the Pi is stale — repackage from the latest `packerOut.zip`.
+- **`Invalid number of tensors` / `expected 4`**: model output layout mismatch — the export produced tensors incompatible with the `imx500_object_detection` stage. Re-export.
