@@ -1,50 +1,39 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+# Package the latest IMX500 packer output and start the native camera demo.
+set -Eeuo pipefail
 
-echo "========================================="
-echo "   Raspberry Pi IMX500 Setup & Test      "
-echo "========================================="
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIR}"
 
-# 1. Check if we are in the repository root
-if [ ! -f "weights_imx_model/packerOut.zip" ]; then
-    echo "Error: weights_imx_model/packerOut.zip not found!"
-    echo "Please run this script from the root of the elinux repository."
+PACKER_ZIP="${SCRIPT_DIR}/weights_imx_model/packerOut.zip"
+NETWORK_RPK="${SCRIPT_DIR}/weights_imx_model/network.rpk"
+
+if [[ ! -f "${PACKER_ZIP}" ]]; then
+    echo "Error: missing ${PACKER_ZIP}" >&2
+    echo "Copy the final packerOut.zip into weights_imx_model/ first." >&2
     exit 1
 fi
 
-# 2. Package the RPK (Task 13)
-echo "[1/3] Packaging the RPK using imx500-package..."
-imx500-package -i weights_imx_model/packerOut.zip -o weights_imx_model
-
-# Check if network.rpk was produced
-if [ ! -f "weights_imx_model/network.rpk" ]; then
-    echo "Error: network.rpk was not generated!"
+if ! command -v imx500-package >/dev/null 2>&1; then
+    echo "Error: imx500-package is not installed or not on PATH." >&2
+    echo "Install it on Raspberry Pi OS with: sudo apt install imx500-tools" >&2
     exit 1
 fi
-echo "network.rpk successfully generated at weights_imx_model/network.rpk"
 
-# 3. Create the test configuration JSON (Task 14)
-echo "[2/3] Generating test_config.json..."
-NETWORK_RPK_PATH="$(pwd)/weights_imx_model/network.rpk"
+if ! command -v rpicam-hello >/dev/null 2>&1; then
+    echo "Error: rpicam-hello is not installed or not on PATH." >&2
+    echo "Install/update the Raspberry Pi camera software before continuing." >&2
+    exit 1
+fi
 
-cat <<EOF > test_config.json
-{
-    "imx500_object_detection": {
-        "max_detections": 300,
-        "threshold": 0.3,
-        "network_file": "${NETWORK_RPK_PATH}",
-        "classes": ["ROI"]
-    },
-    "object_detect_draw_cv": {
-        "line_thickness": 6
-    }
-}
-EOF
-echo "Created test_config.json pointing to ${NETWORK_RPK_PATH}"
+echo "Packaging ${PACKER_ZIP} for the IMX500 camera..."
+imx500-package -i "${PACKER_ZIP}" -o "${SCRIPT_DIR}/weights_imx_model"
 
-# 4. Run the camera test (Task 14)
-echo "[3/3] Running camera test with rpicam-hello..."
-echo "Press Ctrl+C to stop the test."
-echo ""
+if [[ ! -s "${NETWORK_RPK}" ]]; then
+    echo "Error: packaging did not produce ${NETWORK_RPK}" >&2
+    exit 1
+fi
 
-rpicam-hello -t 0 --post-process-file test_config.json --shutter 50 -v 2 --viewfinder-width 1920 --viewfinder-height 1080
+echo "Created ${NETWORK_RPK}"
+echo "Starting the camera preview. Press Ctrl+C to stop."
+exec "${SCRIPT_DIR}/pi_run_demo.sh"

@@ -1,67 +1,54 @@
 #!/usr/bin/env bash
-# Native rpicam demo: IMX500 ROI detection with bounding boxes on preview
-# and one brief stdout line per detected ROI.
-# Must be run from the repo root.
-set -e
-cd "$(dirname "$0")"
+# Run the packaged LED-strip detector with Raspberry Pi's native camera preview.
+set -Eeuo pipefail
 
-NETWORK_RPK_PATH="$(pwd)/weights_imx_model/network.rpk"
-if [ ! -f "${NETWORK_RPK_PATH}" ]; then
-    echo "Missing ${NETWORK_RPK_PATH}. Package it first:"
-    echo "  imx500-package -i weights_imx_model/packerOut.zip -o weights_imx_model"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+NETWORK_RPK="${SCRIPT_DIR}/weights_imx_model/network.rpk"
+OUTPUT_DIR="${SCRIPT_DIR}/output"
+CONFIG="${OUTPUT_DIR}/test_config.runtime.json"
+
+if [[ ! -s "${NETWORK_RPK}" ]]; then
+    echo "Missing ${NETWORK_RPK}. Package the latest packerOut.zip first:" >&2
+    echo "  imx500-package -i '${SCRIPT_DIR}/weights_imx_model/packerOut.zip' -o '${SCRIPT_DIR}/weights_imx_model'" >&2
     exit 1
 fi
 
-# Generate config with the absolute RPK path (relative paths silently fail on some builds).
-CONFIG=output/test_config.runtime.json
-mkdir -p output
+if ! command -v rpicam-hello >/dev/null 2>&1; then
+    echo "Error: rpicam-hello is not installed or not on PATH." >&2
+    exit 1
+fi
+
+mkdir -p "${OUTPUT_DIR}"
 cat > "${CONFIG}" <<EOF
 {
     "imx500_object_detection": {
-        "max_detections": 300,
+        "max_detections": 5,
         "threshold": 0.3,
-        "network_file": "${NETWORK_RPK_PATH}",
+        "network_file": "${NETWORK_RPK}",
+        "temporal_filter": {
+            "tolerance": 0.1,
+            "factor": 0.2,
+            "visible_frames": 4,
+            "hidden_frames": 2
+        },
         "classes": ["ROI"]
     },
     "object_detect_draw_cv": {
-        "line_thickness": 6
+        "line_thickness": 2
     }
 }
 EOF
 
-rpicam-hello \
+echo "Using model: ${NETWORK_RPK}"
+echo "Using post-processing config: ${CONFIG}"
+echo "Look for ROI boxes in the preview and detection/box-coordinate messages below. Press Ctrl+C to stop."
+
+# 50 us exposure is required by the rolling-shutter LED communication setup.
+exec rpicam-hello \
     -t 0 \
     --post-process-file "${CONFIG}" \
     --shutter 50 \
-    --viewfinder-width 1920 --viewfinder-height 1080 \
-    --metadata - \
-    --metadata-format json \
-  | python3 -c '
-import sys, json
-seen_keys = set()
-DET_KEYS = ("ObjectDetect", "Imx500ObjectDetect", "Detections", "objects")
-for line in sys.stdin:
-    line = line.strip()
-    if not line.startswith("{"):
-        continue
-    try:
-        d = json.loads(line)
-    except Exception:
-        continue
-    # Log any new top-level keys we have not seen (helps identify the detection key).
-    new = [k for k in d.keys() if k not in seen_keys]
-    for k in new:
-        seen_keys.add(k)
-        print(f"[meta-key] {k}", flush=True)
-    for key in DET_KEYS:
-        dets = d.get(key)
-        if not dets:
-            continue
-        for det in dets:
-            if isinstance(det, dict):
-                box = det.get("box") or det.get("bbox") or [0,0,0,0]
-                conf = det.get("confidence", det.get("score", 0.0))
-                print(f"detected[{key}]  conf={conf:.2f}  box={box}", flush=True)
-            else:
-                print(f"detected[{key}]  raw={det}", flush=True)
-'
+    --viewfinder-width 1920 \
+    --viewfinder-height 1080 \
+    --framerate 15 \
+    -v 2
