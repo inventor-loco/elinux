@@ -75,10 +75,14 @@ def main():
                         # (x0, y0, x1, y1) box and returns an ISP Rectangle.
                         coords = [x0, y0, x1, y1]
                         rect = imx500.convert_inference_coords(coords, metadata, picam2)
-                        x = int(rect.x)
-                        y = int(rect.y)
-                        width = int(rect.width)
-                        height = int(rect.height)
+                        # Picamera2 releases have returned either a tuple or
+                        # a libcamera Rectangle here.
+                        if hasattr(rect, "x"):
+                            x, y, width, height = (
+                                int(rect.x), int(rect.y), int(rect.width), int(rect.height)
+                            )
+                        else:
+                            x, y, width, height = (int(value) for value in rect)
 
                         # Discard invalid or fully clipped detections rather than
                         # drawing a misleading zero-area box.
