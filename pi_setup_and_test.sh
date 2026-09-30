@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Package the latest IMX500 packer output and start the native camera demo.
+# Package the latest IMX500 packer output and start the Picamera2 demo.
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,9 +20,14 @@ if ! command -v imx500-package >/dev/null 2>&1; then
     exit 1
 fi
 
-if ! command -v rpicam-hello >/dev/null 2>&1; then
-    echo "Error: rpicam-hello is not installed or not on PATH." >&2
-    echo "Install/update the Raspberry Pi camera software before continuing." >&2
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "Error: python3 is not installed or not on PATH." >&2
+    exit 1
+fi
+
+if ! python3 -c 'import cv2; from picamera2 import Picamera2; from picamera2.devices import IMX500' >/dev/null 2>&1; then
+    echo "Error: Picamera2 or OpenCV Python modules are unavailable." >&2
+    echo "On Raspberry Pi OS, install them with: sudo apt install python3-picamera2 python3-opencv" >&2
     exit 1
 fi
 

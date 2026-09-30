@@ -1324,11 +1324,11 @@ Then determine the best Python environment for the exact IMX500 conversion versi
 Only after that should package installation begin.
 ---
 
-# 34. Native rpicam Demo with Bounding Boxes (RESOLVED)
+# 34. ROI Detections on Pi; Native Bounding-Box Decode Is Not Suitable
 
-Section 22's "no detections" blocker applied to the earlier 10-image calibration. After the Linux re-conversion with the 700-image calibration set, the current RPK produces valid detections on the IMX500.
+Section 22's "no detections" blocker applied to the earlier 10-image calibration. The newer RPK produces ROI detections on the IMX500.
 
-Bounding boxes can be drawn directly on the native `rpicam-hello` preview — no Python overlay needed. The `pi_test_python.py` and `pi_live_hybrid.py` scripts are standby fallbacks only.
+The native `rpicam-apps` object-detection stage reports boxes, but clips them to zero width and height. Use the Picamera2 YOLO-aware decoder in `pi_test_python.py`; it applies the normalization and box ordering expected by Raspberry Pi's YOLO examples.
 
 ## Required pieces
 
@@ -1338,51 +1338,28 @@ Bounding boxes can be drawn directly on the native `rpicam-hello` preview — no
    imx500-package -i weights_imx_model/packerOut.zip -o weights_imx_model
    ```
 
-2. `test_config.json` — rpicam-apps post-process pipeline that runs the IMX500 detector and overlays boxes. Committed at repo root.
+2. `pi_test_python.py` — Picamera2 test that normalizes and reorders the YOLO boxes, then draws only boxes with valid dimensions.
+3. `pi_run_demo.sh` — launches the Picamera2 test; `pi_setup_and_test.sh` packages the archive and launches the demo.
 
-   ```json
-   {
-       "imx500_object_detection": {
-           "max_detections": 5,
-           "threshold": 0.3,
-           "network_file": "weights_imx_model/network.rpk",
-           "temporal_filter": {
-               "tolerance": 0.1, "factor": 0.2,
-               "visible_frames": 4, "hidden_frames": 2
-           },
-           "classes": ["ROI"]
-       },
-       "object_detect_draw_cv": { "line_thickness": 2 }
-   }
-   ```
-
-3. `pi_run_demo.sh` — wrapper that `cd`s into the repo and runs:
-
-   ```bash
-   rpicam-hello -t 0 --post-process-file test_config.json \
-       --shutter 50 --width 1920 --height 1080 --framerate 15
-   ```
-
-   `--shutter 50` is required: this is a rolling-shutter LED-communication system, and short exposure preserves per-line diversity within a frame. Do not raise it.
+The script sets a 50 µs shutter for the rolling-shutter LED-communication setup. Do not raise it.
 
 ## Run
 
-From the repo root on the Pi:
+From the repo root on the Pi, package the latest archive and start the box-normalizing Picamera2 test:
 
 ```bash
-./pi_run_demo.sh
+./pi_setup_and_test.sh
 ```
 
 ## If it doesn't draw boxes
 
-- **`network_file` path not found**: some rpicam-apps builds require an absolute path. Replace `weights_imx_model/network.rpk` in `test_config.json` with the absolute path on the Pi (e.g. `/home/<user>/elinux/weights_imx_model/network.rpk`).
-- **Boxes but no `ROI` label**: drop the `"classes"` array; the drawer will label by index.
-- **Config loads but zero detections**: temporarily set `"threshold": 0.0` to confirm the postprocessor is receiving output tensors. If still empty, the RPK on the Pi is stale — repackage from the latest `packerOut.zip`.
-- **`Invalid number of tensors` / `expected 4`**: model output layout mismatch — the export produced tensors incompatible with the `imx500_object_detection` stage. Re-export.
+- **Picamera2/OpenCV import error**: install the OS packages with `sudo apt install python3-picamera2 python3-opencv`.
+- **Model missing**: run `./pi_setup_and_test.sh` so the latest packer ZIP is repackaged.
+- **Invalid box coordinates**: preserve the printed raw coordinates and dimensions; the test intentionally skips zero-area boxes so the output can be diagnosed without false overlay rectangles.
 
 ---
 
-# 35. Re-Export Required: Missing Box-Decode / Postprocessing Head
+# 35. Previous Diagnosis: Missing Box-Decode / Postprocessing Head
 
 ## Symptom
 
@@ -1394,33 +1371,28 @@ On the Pi with `pi_setup_and_test.sh` (the working native pipeline), the model *
 
 The `/0x0` at the end is width × height = 0 × 0. The drawer is drawing invisible rectangles.
 
-## Cause
+## Previous cause hypothesis (superseded by the latest package metadata)
 
-The Raspberry Pi's reference IMX500 models are named `..._pp.rpk` — e.g. `/usr/share/imx500-models/imx500_network_ssd_mobilenetv2_fpnlite_320x320_pp.rpk`. The `_pp` suffix means the postprocessing head (box decoding, NMS) is baked into the RPK itself.
+Earlier notes inferred that the model lacked a postprocessing head because the boxes were degenerate. The current packer's `dnnParams.xml` disproves that inference: it lists four `MultiClassNMSWithIndices` outputs, including 300×4 boxes, 300 scores, 300 classes, and a detection count.
 
-Our current model is `weights_imx_model/network.rpk` with no `_pp` — the export was done without the postprocessing head. The `imx500_object_detection` rpicam-apps stage then receives raw YOLO output tensors and mis-decodes the box coordinates, producing degenerate boxes that get clipped to zero area.
+The model emits YOLO-style normalized coordinates. `rpicam-apps`' generic `imx500_object_detection` stage assumes pixel-space coordinates in a different convention and clips these boxes to zero area. Raspberry Pi's Picamera2 YOLO demo explicitly handles boxes with `--bbox-normalization --bbox-order xy`; use that decoder instead of re-exporting solely to address these zero-area boxes.
 
-Rpicam-apps parameter tweaks alone will not fix this. The shipped SSD reference config (`/usr/share/rpi-camera-assets/imx500_mobilenet_ssd.json`) confirms the valid stage parameters are: `max_detections`, `threshold`, `network_file`, `save_input_tensor` (debug), `temporal_filter`, `classes`. There is no `bbox_normalization`, no `bbox_order`, no box-format switch — the RPK's baked-in PP head is the only way box decoding happens.
+Rpicam-apps parameter tweaks alone will not fix this. The shipped object-detection config has no `bbox_normalization` or `bbox_order` options. The Picamera2 test applies those transformations and logs invalid/zero-area boxes instead of drawing misleading defaults.
 
-## Action
+## Current action
 
-Re-export `weights.pt` with the postprocessing head included. Ultralytics' IMX export path bundles it automatically:
+Run the packaged model with the updated Picamera2 decoder:
 
 ```bash
-yolo export model=weights.pt format=imx int8=True data=imx.yaml
+./pi_setup_and_test.sh
 ```
 
-This must run on Linux with the pinned toolchain from `imx500_requirements.txt` (see §25). It should produce an ONNX with a `_pp`-equivalent structure that, once run through `imx500-converter` and `imx500-package`, gives an RPK with the box-decode baked in.
+The existing package already contains the NMS outputs, so do not start another conversion unless the Picamera2 decoder shows that the output tensor semantics are still incompatible.
 
-## Verification steps after re-export
+## Verification steps
 
-1. Rename or symlink the new RPK to include `_pp` if it doesn't already (naming is convention only, not required by rpicam-apps).
-2. Drop the new `packerOut.zip` into `weights_imx_model/` and repackage on the Pi:
-   ```bash
-   imx500-package -i weights_imx_model/packerOut.zip -o weights_imx_model
-   ```
-3. Run `./pi_setup_and_test.sh` or `./pi_run_demo.sh` and confirm bounding boxes are drawn on the preview.
-4. Verbose log should now show `(bound) ... /WxH` with non-zero W and H.
+1. Run `./pi_setup_and_test.sh` on the Pi.
+2. Confirm ROI boxes appear in the Picamera2 preview and terminal messages report valid boxes.
 
 ## Optional: verify input normalization after re-export
 
@@ -1435,14 +1407,14 @@ The reference SSD config includes a debug block that dumps raw input tensors to 
 }
 ```
 
-If detections are still wrong after re-export (e.g. boxes appear but consistently offset), add this block to the `imx500_object_detection` stage, adjust `norm_val` / `norm_shift` to match the YOLO input preprocessing (0-1 float → `norm_val: [255, 255, 255, 0]`, `norm_shift: [0, 0, 0, 0]`), and compare the dumped tensors to what the model was trained on. See TODO §21 for prior notes on IMX500 input normalization.
+This was an earlier diagnostic for the native rpicam-apps path. It is not part of the current Picamera2 YOLO test, which reads the IMX500 output tensors directly. Revisit input normalization only if Picamera2 results show poor confidence or systematic detection errors.
 
 ## Sanity check with a known-good model
 
-To rule out any camera / rpicam-apps issue before re-exporting, point `network_file` at the shipped SSD RPK and run:
+To independently check the camera firmware and stock rpicam-apps pipeline, run the shipped SSD model (this does not validate the custom model's YOLO decoder):
 
 ```bash
 rpicam-hello -t 0 --post-process-file /usr/share/rpi-camera-assets/imx500_mobilenet_ssd.json
 ```
 
-If that draws boxes on people/cars/etc, the drawer + postprocessor chain is healthy and the issue is definitively our custom RPK.
+If that draws boxes on people/cars/etc, the camera and stock pipeline are operating.
